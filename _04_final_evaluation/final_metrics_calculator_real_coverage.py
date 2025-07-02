@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-基于原始格网数据的真实覆盖分析计算脚本
-按照4solution.md第四步要求：基于原始的、真实的格网数据进行验算
+第四问最终指标计算脚本
+基于原始格网数据计算测线总长度、漏测率、重叠率超过20%部分的总长度
 """
 
 import numpy as np
@@ -16,18 +16,19 @@ def load_original_data():
     print("   - 加载原始格网数据...")
     df = pd.read_csv('/Users/Mac/Downloads/23b/_00_source_data/output.csv')
     
-    # 转换为海里 (1海里 = 1852米，原始数据假设为公里)
-    x_nm = df['横坐标'].values / 1.852  # 转换为海里
-    y_nm = df['纵坐标'].values / 1.852  # 转换为海里
-    depth = df['深度'].values
+    # 原始数据中坐标已经是海里单位，深度是米单位
+    x_nm = np.array(df['横坐标'].values, dtype=float)  # 坐标已经是海里
+    y_nm = np.array(df['纵坐标'].values, dtype=float)  # 坐标已经是海里
+    depth = np.array(df['深度'].values, dtype=float)  # 深度是米
     
     print(f"   - 数据范围: X=[{x_nm.min():.3f}, {x_nm.max():.3f}] 海里, Y=[{y_nm.min():.3f}, {y_nm.max():.3f}] 海里")
     print(f"   - 水深范围: [{depth.min():.1f}, {depth.max():.1f}] 米")
+    print(f"   - 海域尺寸: 东西{x_nm.max()-x_nm.min():.1f}海里 × 南北{y_nm.max()-y_nm.min():.1f}海里")
     
     # 建立插值函数 D_true = f(x, y)
     interpolator = LinearNDInterpolator(list(zip(x_nm, y_nm)), depth)
     
-    return interpolator, x_nm, y_nm, depth
+    return interpolator
 
 def calculate_swath_width(depth, beam_angle=120):
     """根据水深计算条带宽度"""
@@ -36,7 +37,7 @@ def calculate_swath_width(depth, beam_angle=120):
     swath_width_nm = swath_width_m / 1852  # 转换为海里
     return min(swath_width_nm, 0.2)  # 限制最大宽度0.2海里
 
-def calculate_line_coverage(x_start, y_start, x_end, y_end, interpolator, num_samples=50):
+def calculate_line_coverage(x_start, y_start, x_end, y_end, interpolator, num_samples=30):
     """计算单条测线的真实覆盖带"""
     # 沿测线采样
     t = np.linspace(0, 1, num_samples)
@@ -62,19 +63,14 @@ def calculate_line_coverage(x_start, y_start, x_end, y_end, interpolator, num_sa
     coverage_points = list(zip(valid_x, valid_y))
     return coverage_points, swath_widths
 
-def calculate_overlap_and_gaps(lines_df, interpolator):
-    """计算相邻测线间的重叠和空隙"""
-    print("   - 计算测线间重叠和空隙...")
-    
-    total_area = 0
-    covered_area = 0
-    overlap_area = 0
-    excess_overlap_length = 0
+def calculate_coverage_metrics(lines_df, interpolator):
+    """计算覆盖指标：覆盖率、漏测率、重叠率超过20%部分的总长度"""
+    print("   - 计算覆盖指标...")
     
     # 创建覆盖网格 (0.01海里分辨率)
     grid_resolution = 0.01  # 海里
-    x_min, x_max = 0, 2.2  # 海里
-    y_min, y_max = 0, 2.7  # 海里
+    x_min, x_max = 0, 4.0  # 海里 (东西宽4海里)
+    y_min, y_max = 0, 5.0  # 海里 (南北长5海里)
     
     x_grid = np.arange(x_min, x_max, grid_resolution)
     y_grid = np.arange(y_min, y_max, grid_resolution)
@@ -82,7 +78,7 @@ def calculate_overlap_and_gaps(lines_df, interpolator):
     
     print(f"   - 网格大小: {len(x_grid)} x {len(y_grid)} = {len(x_grid)*len(y_grid)} 个格点")
     
-    # 遍历每条测线
+    # 遍历每条测线计算覆盖
     for idx, row in lines_df.iterrows():
         if idx % 30 == 0:
             print(f"   - 处理测线 {idx+1}/{len(lines_df)}")
@@ -92,7 +88,7 @@ def calculate_overlap_and_gaps(lines_df, interpolator):
         
         # 计算测线覆盖
         coverage_points, swath_widths = calculate_line_coverage(
-            x_start, y_start, x_end, y_end, interpolator, num_samples=30)
+            x_start, y_start, x_end, y_end, interpolator)
         
         if not coverage_points:
             continue
@@ -117,69 +113,116 @@ def calculate_overlap_and_gaps(lines_df, interpolator):
     # 统计覆盖情况
     total_points = len(x_grid) * len(y_grid) 
     covered_points = np.sum(coverage_count > 0)
-    overlap_points = np.sum(coverage_count > 1)
     
-    # 计算面积
-    cell_area = grid_resolution ** 2  # 平方海里
-    total_area = total_points * cell_area
-    covered_area = covered_points * cell_area
-    overlap_area = overlap_points * cell_area
-    
-    # 计算漏测率
-    miss_rate = (total_points - covered_points) / total_points
+    # 计算覆盖率和漏测率
     coverage_rate = covered_points / total_points
+    miss_rate = (total_points - covered_points) / total_points
     
-    # 估算超额重叠长度 (基于重叠面积)
-    avg_swath_width = 0.15  # 海里，估算平均条带宽度
-    excess_overlap_length = overlap_area / avg_swath_width if avg_swath_width > 0 else 0
-    
-    print(f"   - 网格统计: 总格点{total_points}, 覆盖{covered_points}, 重叠{overlap_points}")
+    # 计算重叠率超过20%部分的总长度
+    print("   - 计算重叠率超过20%的测线段...")
+    excess_overlap_length = calculate_excess_overlap_length(lines_df, interpolator)
     
     return {
         'coverage_rate': coverage_rate,
         'miss_rate': miss_rate,
-        'total_area': total_area,
-        'covered_area': covered_area,
-        'overlap_area': overlap_area,
-        'excess_overlap_length_nm': excess_overlap_length,
-        'coverage_grid': coverage_count
+        'excess_overlap_length_nm': excess_overlap_length
     }
 
-def calculate_region_statistics(lines_df, plane_params):
-    """计算各区域统计数据"""
-    region_stats = []
+def calculate_excess_overlap_length(lines_df, interpolator):
+    """计算重叠率超过20%部分的总长度"""
+    excess_length_total = 0.0
+    target_overlap_rate = 0.20  # 20%阈值
     
+    # 按区域分组处理
     for region_id in sorted(lines_df['region_id'].unique()):
-        region_lines = lines_df[lines_df['region_id'] == region_id]
+        region_lines = lines_df[lines_df['region_id'] == region_id].sort_values('line_id')
         
-        num_lines = len(region_lines)
-        total_length_original = region_lines['length_original_nm'].sum()
-        total_length_optimized = region_lines['length_optimized_nm'].sum()
-        length_reduction = region_lines['length_reduction_nm'].sum()
-        
-        # 获取坡度信息
-        plane_row = plane_params[plane_params['区域编号'] == region_id]
-        if len(plane_row) > 0:
-            beta1, beta2 = plane_row.iloc[0]['β₁'], plane_row.iloc[0]['β₂']
-            slope_deg = np.degrees(np.arctan(np.sqrt(beta1**2 + beta2**2)))
-        else:
-            slope_deg = 0
+        if len(region_lines) < 2:
+            continue
             
-        region_stats.append({
-            '区域编号': int(region_id),
-            '测线数量': num_lines,
-            '原始总长度(海里)': total_length_original,
-            '优化总长度(海里)': total_length_optimized,
-            '长度减少(海里)': length_reduction,
-            '减少比例(%)': (length_reduction / total_length_original * 100) if total_length_original > 0 else 0,
-            '区域坡度(度)': slope_deg
-        })
+        region_lines_list = region_lines.to_dict('records')
+        
+        # 遍历相邻测线对
+        for i in range(len(region_lines_list) - 1):
+            line1 = region_lines_list[i]
+            line2 = region_lines_list[i + 1]
+            
+            # 计算相邻测线间的重叠率和长度
+            segment_excess_length = calculate_pairwise_excess_overlap(
+                line1, line2, interpolator, target_overlap_rate)
+            
+            excess_length_total += segment_excess_length
     
-    return pd.DataFrame(region_stats)
+    return excess_length_total
+
+def calculate_pairwise_excess_overlap(line1, line2, interpolator, target_overlap_rate):
+    """计算两条相邻测线间重叠率超过阈值部分的长度"""
+    # 获取测线参数
+    x1_start, y1_start = line1['x_start_nm'], line1['y_start_nm']
+    x1_end, y1_end = line1['x_end_nm'], line1['y_end_nm']
+    x2_start, y2_start = line2['x_start_nm'], line2['y_start_nm']
+    x2_end, y2_end = line2['x_end_nm'], line2['y_end_nm']
+    
+    # 沿测线采样分析重叠情况
+    num_samples = 20
+    t_values = np.linspace(0, 1, num_samples)
+    
+    excess_length = 0.0
+    
+    for i in range(len(t_values) - 1):
+        t1, t2 = t_values[i], t_values[i + 1]
+        
+        # 计算当前段中点的坐标
+        t_mid = (t1 + t2) / 2
+        
+        # 测线1上的点
+        x1_mid = x1_start + t_mid * (x1_end - x1_start)
+        y1_mid = y1_start + t_mid * (y1_end - y1_start)
+        
+        # 测线2上的点
+        x2_mid = x2_start + t_mid * (x2_end - x2_start)
+        y2_mid = y2_start + t_mid * (y2_end - y2_start)
+        
+        # 查询真实水深
+        depth1 = interpolator(x1_mid, y1_mid)
+        depth2 = interpolator(x2_mid, y2_mid)
+        
+        if np.isnan(depth1) or np.isnan(depth2):
+            continue
+            
+        # 计算各自的条带宽度
+        swath1_width = calculate_swath_width(depth1)
+        swath2_width = calculate_swath_width(depth2)
+        
+        # 计算测线间距（垂直距离）
+        line_distance = np.sqrt((x2_mid - x1_mid)**2 + (y2_mid - y1_mid)**2)
+        
+        # 计算重叠宽度
+        half_swath1 = swath1_width / 2
+        half_swath2 = swath2_width / 2
+        
+        # 重叠宽度 = 两个半宽度之和 - 测线间距
+        overlap_width = half_swath1 + half_swath2 - line_distance
+        
+        if overlap_width > 0:
+            # 计算重叠率（以较小条带宽度为基准）
+            base_width = min(swath1_width, swath2_width)
+            overlap_rate = overlap_width / base_width if base_width > 0 else 0
+            
+            # 如果重叠率超过阈值，累计该段长度
+            if overlap_rate > target_overlap_rate:
+                # 计算该段的实际长度（平均长度）
+                segment_length1 = np.sqrt((x1_end - x1_start)**2 + (y1_end - y1_start)**2) / num_samples
+                segment_length2 = np.sqrt((x2_end - x2_start)**2 + (y2_end - y2_start)**2) / num_samples
+                avg_segment_length = (segment_length1 + segment_length2) / 2
+                
+                excess_length += avg_segment_length
+    
+    return excess_length
 
 def main():
     """主函数"""
-    print("=== 基于原始格网数据的真实覆盖分析计算 ===\n")
+    print("=== 第四问最终指标计算 ===\n")
     
     # 1. 加载数据
     print("1. 加载数据...")
@@ -187,99 +230,50 @@ def main():
         lines_df = pd.read_csv('/Users/Mac/Downloads/23b/_03_line_generation/survey_lines_q4_optimized.csv')
         print(f"   - 加载了 {len(lines_df)} 条测线")
         
-        interpolator, x_orig, y_orig, depth_orig = load_original_data()
+        interpolator = load_original_data()
         
     except FileNotFoundError as e:
         print(f"错误: 找不到必要文件 - {e}")
         return
     
-    # 平面参数
-    plane_params_data = {
-        '区域编号': [0, 1, 2, 3, 4, 5, 6],
-        'β₁': [-0.21, 20.45, 2.35, 41.52, 62.59, 9.55, 14.40],
-        'β₂': [4.47, 1.39, 18.97, -8.20, -24.34, 7.86, -8.28]
-    }
-    plane_params_df = pd.DataFrame(plane_params_data)
+    # 2. 计算最终指标
+    print("\n2. 计算最终指标...")
+    coverage_metrics = calculate_coverage_metrics(lines_df, interpolator)
     
-    # 2. 真实覆盖分析
-    print("\n2. 基于原始格网数据进行真实覆盖分析...")
-    coverage_analysis = calculate_overlap_and_gaps(lines_df, interpolator)
+    # 3. 计算测线总长度
+    total_length_nm = lines_df['length_optimized_nm'].sum()
+    total_length_km = total_length_nm * 1.852
     
-    # 3. 计算区域统计
-    print("\n3. 计算区域统计...")
-    region_stats_df = calculate_region_statistics(lines_df, plane_params_df)
+    # 4. 输出最终结果
+    print("\n" + "="*50)
+    print("第四问最终答案")
+    print("="*50)
+    print(f"(1) 测线的总长度: {total_length_nm:.2f} 海里 ({total_length_km:.2f} 公里)")
+    print(f"(2) 漏测海区占总待测海域面积的百分比: {coverage_metrics['miss_rate']*100:.4f}%")
+    print(f"(3) 重叠率超过20%部分的总长度: {coverage_metrics['excess_overlap_length_nm']:.2f} 海里")
+    print("="*50)
     
-    # 4. 生成报告
-    print("\n4. 生成最终报告...")
-    
-    # 总体统计
-    total_length_original = lines_df['length_original_nm'].sum()
-    total_length_optimized = lines_df['length_optimized_nm'].sum()
-    total_reduction = lines_df['length_reduction_nm'].sum()
-    
-    # 保存详细数据
-    region_stats_df.to_csv('region_wise_statistics_real_coverage.csv', index=False, float_format='%.4f')
-    
-    coverage_summary = pd.DataFrame([{
-        '指标': '覆盖率',
-        '数值': f"{coverage_analysis['coverage_rate']:.6f}",
-        '百分比': f"{coverage_analysis['coverage_rate']*100:.4f}%"
+    # 5. 保存结果到文件
+    final_results = pd.DataFrame([{
+        '指标': '测线总长度(海里)',
+        '数值': f"{total_length_nm:.2f}"
     }, {
-        '指标': '漏测率', 
-        '数值': f"{coverage_analysis['miss_rate']:.6f}",
-        '百分比': f"{coverage_analysis['miss_rate']*100:.4f}%"
+        '指标': '测线总长度(公里)', 
+        '数值': f"{total_length_km:.2f}"
     }, {
-        '指标': '超额重叠长度',
-        '数值': f"{coverage_analysis['excess_overlap_length_nm']:.2f} 海里",
-        '百分比': f"{coverage_analysis['excess_overlap_length_nm']/total_length_optimized*100:.2f}%"
+        '指标': '漏测率(%)',
+        '数值': f"{coverage_metrics['miss_rate']*100:.4f}"
+    }, {
+        '指标': '覆盖率(%)',
+        '数值': f"{coverage_metrics['coverage_rate']*100:.4f}"
+    }, {
+        '指标': '重叠率超过20%部分总长度(海里)',
+        '数值': f"{coverage_metrics['excess_overlap_length_nm']:.2f}"
     }])
-    coverage_summary.to_csv('coverage_analysis_real_coverage.csv', index=False)
     
-    final_summary = pd.DataFrame([{
-        '原始测线总长度(海里)': total_length_original,
-        '优化测线总长度(海里)': total_length_optimized,
-        '长度减少(海里)': total_reduction,
-        '减少比例(%)': total_reduction/total_length_original*100,
-        '覆盖率(%)': coverage_analysis['coverage_rate']*100,
-        '漏测率(%)': coverage_analysis['miss_rate']*100,
-        '超额重叠长度(海里)': coverage_analysis['excess_overlap_length_nm'],
-        '总面积(平方海里)': coverage_analysis['total_area'],
-        '覆盖面积(平方海里)': coverage_analysis['covered_area'],
-        '重叠面积(平方海里)': coverage_analysis['overlap_area']
-    }])
-    final_summary.to_csv('final_survey_summary_real_coverage.csv', index=False, float_format='%.6f')
-    
-    # 打印结果
-    print("\n=== 基于真实格网数据的最终指标 ===")
-    print(f"测线数量: {len(lines_df)} 条")
-    print(f"原始总长度: {total_length_original:.2f} 海里 ({total_length_original*1.852:.2f} 公里)")
-    print(f"优化总长度: {total_length_optimized:.2f} 海里 ({total_length_optimized*1.852:.2f} 公里)")
-    print(f"长度减少: {total_reduction:.2f} 海里 ({total_reduction*1.852:.2f} 公里)")
-    print(f"减少比例: {total_reduction/total_length_original*100:.1f}%")
-    print()
-    print("=== 真实覆盖质量指标 ===")
-    print(f"覆盖率: {coverage_analysis['coverage_rate']*100:.4f}%")
-    print(f"漏测率: {coverage_analysis['miss_rate']*100:.4f}%")
-    print(f"超额重叠长度: {coverage_analysis['excess_overlap_length_nm']:.2f} 海里")
-    print(f"超额重叠比例: {coverage_analysis['excess_overlap_length_nm']/total_length_optimized*100:.2f}%")
-    print()
-    print(f"面积统计:")
-    print(f"  总作业面积: {coverage_analysis['total_area']:.3f} 平方海里")
-    print(f"  实际覆盖面积: {coverage_analysis['covered_area']:.3f} 平方海里")
-    print(f"  重叠面积: {coverage_analysis['overlap_area']:.3f} 平方海里")
-    print()
-    
-    print("=== 分区域统计 ===")
-    print(region_stats_df.to_string(index=False, float_format='%.2f'))
-    print()
-    
-    print("详细数据已保存至:")
-    print("- region_wise_statistics_real_coverage.csv")
-    print("- coverage_analysis_real_coverage.csv") 
-    print("- final_survey_summary_real_coverage.csv")
-    
-    print("\n=== 计算完成 ===")
-    print("注意: 此计算基于原始格网数据的真实水深插值，符合4solution.md第四步要求")
+    final_results.to_csv('第四问最终答案.csv', index=False)
+    print(f"\n结果已保存至: 第四问最终答案.csv")
+    print("计算完成！")
 
 if __name__ == '__main__':
     main() 
