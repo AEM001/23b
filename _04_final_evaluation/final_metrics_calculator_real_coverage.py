@@ -144,7 +144,7 @@ def calculate_coverage_metrics(lines_df, interpolator):
     
     # 计算重叠率超过20%部分的总长度
     print("   - 计算重叠率超过20%的测线段...")
-    excess_overlap_length = calculate_excess_overlap_length_smart(lines_df, interpolator)
+    excess_overlap_length = calculate_excess_overlap_length_corrected(lines_df, interpolator)
     
     return {
         'coverage_rate': coverage_rate,
@@ -152,10 +152,70 @@ def calculate_coverage_metrics(lines_df, interpolator):
         'excess_overlap_length_nm': excess_overlap_length
     }
 
-def calculate_excess_overlap_length_smart(lines_df, interpolator):
-    """计算重叠率超过20%部分的总长度 - 智能版本"""
+def calculate_swath_width_with_slope(depth, local_slope_deg, beam_angle=120, is_left=True):
+    """根据水深和局部坡度计算条带宽度（考虑坡度修正）"""
+    theta_half = np.radians(beam_angle / 2)  # 半开角
+    alpha_local = np.radians(local_slope_deg)  # 局部坡度
+    
+    if is_left:
+        # 左侧覆盖宽度
+        denominator = np.cos(theta_half + alpha_local)
+    else:
+        # 右侧覆盖宽度  
+        denominator = np.cos(theta_half - alpha_local)
+    
+    if abs(denominator) < 0.01:  # 避免除零
+        denominator = 0.01
+        
+    swath_width_m = depth * np.sin(theta_half) / denominator
+    swath_width_nm = swath_width_m / 1852
+    return min(swath_width_nm, 0.2)  # 限制最大宽度0.2海里
+
+def calculate_local_slope(x1, y1, depth1, x2, y2, depth2):
+    """计算两点间的局部真实坡度"""
+    horizontal_dist = np.sqrt((x2 - x1)**2 + (y2 - y1)**2) * 1852  # 转换为米
+    vertical_diff = abs(depth2 - depth1)  # 米
+    
+    if horizontal_dist < 1e-6:  # 避免除零
+        return 0.0
+        
+    slope_rad = np.arctan(vertical_diff / horizontal_dist)
+    slope_deg = np.degrees(slope_rad)
+    return slope_deg
+
+def find_corresponding_point_on_adjacent_line(x_p, y_p, line1, line2, design_spacing):
+    """在相邻测线上找到与当前点"正对"的点"""
+    # 计算测线方向向量
+    dx1 = line1['x_end_nm'] - line1['x_start_nm']
+    dy1 = line1['y_end_nm'] - line1['y_start_nm']
+    line1_length = np.sqrt(dx1**2 + dy1**2)
+    
+    if line1_length == 0:
+        return None
+        
+    # 单位方向向量
+    ux = dx1 / line1_length
+    uy = dy1 / line1_length
+    
+    # 垂直方向向量（坡向）
+    perp_ux = -uy
+    perp_uy = ux
+    
+    # 在相邻测线上的对应点
+    x_p_prime = x_p + perp_ux * design_spacing
+    y_p_prime = y_p + perp_uy * design_spacing
+    
+    return x_p_prime, y_p_prime
+
+def calculate_excess_overlap_length_corrected(lines_df, interpolator):
+    """
+    计算重叠率超过20%部分的总长度 - 按标准方法修正
+    沿测线逐点计算与邻近测线的实际重叠率
+    """
     excess_length_total = 0.0
     target_overlap_rate = 0.20  # 20%阈值
+    
+    print("   - 使用标准方法计算重叠率超过20%的测线段...")
     
     # 按区域分组处理
     for region_id in sorted(lines_df['region_id'].unique()):
@@ -165,91 +225,98 @@ def calculate_excess_overlap_length_smart(lines_df, interpolator):
             continue
             
         region_lines_list = region_lines.to_dict('records')
-        
         print(f"   - 处理区域 {region_id}，共 {len(region_lines_list)} 条测线")
         
         # 遍历相邻测线对
         for i in range(len(region_lines_list) - 1):
-            line1 = region_lines_list[i]
-            line2 = region_lines_list[i + 1]
+            line1 = region_lines_list[i]     # Li-1
+            line2 = region_lines_list[i + 1] # Li
             
-            # 计算相邻测线间的重叠率和长度（只考虑有效海域内）
-            segment_excess_length = calculate_pairwise_excess_overlap_smart(
-                line1, line2, interpolator, target_overlap_rate)
+            # 计算设计间距 di-1（两条测线的中心距离）
+            # 简化处理：取测线中点间的距离作为设计间距
+            x1_mid = (line1['x_start_nm'] + line1['x_end_nm']) / 2
+            y1_mid = (line1['y_start_nm'] + line1['y_end_nm']) / 2
+            x2_mid = (line2['x_start_nm'] + line2['x_end_nm']) / 2
+            y2_mid = (line2['y_start_nm'] + line2['y_end_nm']) / 2
+            design_spacing = np.sqrt((x2_mid - x1_mid)**2 + (y2_mid - y1_mid)**2)
             
-            excess_length_total += segment_excess_length
+            # 沿较长测线采样分析
+            line1_length = np.sqrt((line1['x_end_nm'] - line1['x_start_nm'])**2 + 
+                                 (line1['y_end_nm'] - line1['y_start_nm'])**2)
+            line2_length = np.sqrt((line2['x_end_nm'] - line2['x_start_nm'])**2 + 
+                                 (line2['y_end_nm'] - line2['y_start_nm'])**2)
+            
+            # 选择较长的测线进行采样
+            if line1_length >= line2_length:
+                longer_line = line1
+                shorter_line = line2
+            else:
+                longer_line = line2
+                shorter_line = line1
+            
+            # 沿测线路径采样
+            num_samples = 30
+            t_values = np.linspace(0, 1, num_samples)
+            ds = longer_line['length_optimized_nm'] / num_samples  # 每个采样段的长度
+            
+            for j in range(len(t_values)):
+                t = t_values[j]
+                
+                # 采样点 p 的坐标
+                x_p = longer_line['x_start_nm'] + t * (longer_line['x_end_nm'] - longer_line['x_start_nm'])
+                y_p = longer_line['y_start_nm'] + t * (longer_line['y_end_nm'] - longer_line['y_start_nm'])
+                
+                # 只考虑在有效海域内的部分
+                if not is_point_in_region_inclusive(x_p, y_p):
+                    continue
+                
+                # 获取点 p 的真实水深
+                depth_p = interpolator(x_p, y_p)
+                if np.isnan(depth_p):
+                    continue
+                
+                # 找到相邻测线上的对应点 p'
+                result = find_corresponding_point_on_adjacent_line(x_p, y_p, longer_line, shorter_line, design_spacing)
+                if result is None:
+                    continue
+                
+                x_p_prime, y_p_prime = result
+                
+                # 获取点 p' 的真实水深
+                depth_p_prime = interpolator(x_p_prime, y_p_prime)
+                if np.isnan(depth_p_prime):
+                    continue
+                
+                # 计算局部真实坡度
+                local_slope_deg = calculate_local_slope(x_p, y_p, depth_p, x_p_prime, y_p_prime, depth_p_prime)
+                
+                # 计算在真实水深和真实坡度下的覆盖宽度
+                if longer_line == line1:
+                    # line1 在左，line2 在右
+                    W_p_right = calculate_swath_width_with_slope(depth_p, local_slope_deg, is_left=False)
+                    W_p_prime_left = calculate_swath_width_with_slope(depth_p_prime, local_slope_deg, is_left=True)
+                else:
+                    # line2 在左，line1 在右
+                    W_p_right = calculate_swath_width_with_slope(depth_p_prime, local_slope_deg, is_left=False)
+                    W_p_prime_left = calculate_swath_width_with_slope(depth_p, local_slope_deg, is_left=True)
+                
+                # 计算海底的实际重叠距离
+                # L_overlap = W_p_right + W_p_prime_left - design_spacing/cos(α_local)
+                alpha_local_rad = np.radians(local_slope_deg)
+                corrected_spacing = design_spacing / np.cos(alpha_local_rad) if np.cos(alpha_local_rad) > 0.01 else design_spacing
+                L_overlap = W_p_right + W_p_prime_left - corrected_spacing
+                
+                if L_overlap > 0:
+                    # 计算实际重叠率
+                    total_width = W_p_right + W_p_prime_left
+                    if total_width > 0:
+                        eta_actual = L_overlap / total_width
+                        
+                        # 如果重叠率超过20%，累加该段长度
+                        if eta_actual > target_overlap_rate:
+                            excess_length_total += ds
     
     return excess_length_total
-
-def calculate_pairwise_excess_overlap_smart(line1, line2, interpolator, target_overlap_rate):
-    """计算两条相邻测线间重叠率超过阈值部分的长度 - 智能版本"""
-    # 获取测线参数
-    x1_start, y1_start = line1['x_start_nm'], line1['y_start_nm']
-    x1_end, y1_end = line1['x_end_nm'], line1['y_end_nm']
-    x2_start, y2_start = line2['x_start_nm'], line2['y_start_nm']
-    x2_end, y2_end = line2['x_end_nm'], line2['y_end_nm']
-    
-    # 沿测线采样分析重叠情况
-    num_samples = 25
-    t_values = np.linspace(0, 1, num_samples)
-    
-    excess_length = 0.0
-    
-    for i in range(len(t_values) - 1):
-        t1, t2 = t_values[i], t_values[i + 1]
-        
-        # 计算当前段中点的坐标
-        t_mid = (t1 + t2) / 2
-        
-        # 测线1上的点
-        x1_mid = x1_start + t_mid * (x1_end - x1_start)
-        y1_mid = y1_start + t_mid * (y1_end - y1_start)
-        
-        # 测线2上的点
-        x2_mid = x2_start + t_mid * (x2_end - x2_start)
-        y2_mid = y2_start + t_mid * (y2_end - y2_start)
-        
-        # 只考虑在有效海域内的部分
-        if not (is_point_in_region(x1_mid, y1_mid) and is_point_in_region(x2_mid, y2_mid)):
-            continue
-            
-        # 查询真实水深
-        depth1 = interpolator(x1_mid, y1_mid)
-        depth2 = interpolator(x2_mid, y2_mid)
-        
-        if np.isnan(depth1) or np.isnan(depth2):
-            continue
-            
-        # 计算各自的条带宽度
-        swath1_width = calculate_swath_width(depth1)
-        swath2_width = calculate_swath_width(depth2)
-        
-        # 计算测线间距（垂直距离）
-        line_distance = np.sqrt((x2_mid - x1_mid)**2 + (y2_mid - y1_mid)**2)
-        
-        # 计算重叠宽度
-        half_swath1 = swath1_width / 2
-        half_swath2 = swath2_width / 2
-        
-        # 重叠宽度 = 两个半宽度之和 - 测线间距
-        overlap_width = half_swath1 + half_swath2 - line_distance
-        
-        if overlap_width > 0:
-            # 计算重叠率（以较小条带宽度为基准）
-            base_width = min(swath1_width, swath2_width)
-            overlap_rate = overlap_width / base_width if base_width > 0 else 0
-            
-            # 如果重叠率超过阈值，累计该段长度
-            if overlap_rate > target_overlap_rate:
-                # 计算该段在有效海域内的实际长度
-                # 只计算在有效海域内的线段长度
-                segment_length1 = np.sqrt((x1_end - x1_start)**2 + (y1_end - y1_start)**2) / num_samples
-                segment_length2 = np.sqrt((x2_end - x2_start)**2 + (y2_end - y2_start)**2) / num_samples
-                avg_segment_length = (segment_length1 + segment_length2) / 2
-                
-                excess_length += avg_segment_length
-    
-    return excess_length
 
 def main():
     """主函数"""
