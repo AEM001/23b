@@ -82,31 +82,14 @@ if __name__ == "__main__":
     
     print(f"计算完成，结果已保存到 {output_csv_path}")
 
-    # 准备生成Markdown报告
-    display_df = local_coord_params_df.copy()
-    display_df = display_df[['区域编号', '坡向_deg', '主测线方向_deg', 'u_min', 'u_max', 'v_min', 'v_max']]
-    display_df.columns = ['区域编号', '坡向 φ (°)', '主测线方向 θ (°)', 'u_min', 'u_max', 'v_min', 'v_max']
-
-    md_report = "# 各子区域局部坐标系参数报告\n\n"
-    md_report += "本文档根据 `4solution.md` 中提出的坐标变换思路，对 `region_division_report.md` 中划分的7个子区域进行计算，以为后续的测线规划提供基础数据。\n\n"
-    md_report += "## 计算流程\n\n"
-    md_report += "对每个子区域，我们执行了以下步骤：\n\n"
-    md_report += "1.  **方向确定**：基于平面拟合参数 $(\\beta_1, \\beta_2)$，使用 `atan2(-β₂, -β₁)` 计算出该区域的平均坡向 $\\varphi_k$。主测线方向 $\\theta_k$ 定义为与坡向垂直，即 $\\theta_k = \\varphi_k + 90°$。\n"
-    md_report += "2.  **坐标变换**：建立以主测线方向为u轴，坡向为v轴的局部坐标系。使用以下公式将每个区域的4个角点从全局坐标 $(x, y)$ 变换到局部坐标 $(u, v)$：\n"
-    md_report += "   ```\n"
-    md_report += "   u = x*cos(θ_k) + y*sin(θ_k)\n"
-    md_report += "   v = -x*sin(θ_k) + y*cos(θ_k)\n"
-    md_report += "   ```\n"
-    md_report += "3.  **边界确定**：通过变换后的4个角点的坐标，确定每个区域在局部坐标系下的u和v的范围 $(u_{min}, u_{max})$ 和 $(v_{min}, v_{max})$。这个范围，特别是 $v$ 轴的范围，将作为后续迭代布线的有效边界。\n\n"
-    md_report += "## 计算结果\n\n"
-    md_report += "以下表格汇总了每个区域计算出的关键参数。这些数据也已保存至 `local_coord_params.csv` 文件中，方便后续程序调用。\n\n"
-    
-    table_md = display_df.to_markdown(index=False, floatfmt='.4f')
-    if table_md:
-        md_report += table_md
-
-    report_path = 'local_coordinate_system_report.md'
-    with open(report_path, 'w', encoding='utf-8') as f:
-        f.write(md_report)
-
-    print(f"报告已生成: {report_path}") 
+    print("\n--- 各子区域局部坐标系参数 ---")
+    print("| 区域编号 | 坡向 φ (°) | 主测线方向 θ (°) | u_min | u_max | v_min | v_max |")
+    print("|:---:|:---:|:---:|:---:|:---:|:---:|:---:|")
+    for index, row in local_coord_params_df.iterrows():
+        print(f"| {int(row['区域编号'])} "
+              f"| {np.rad2deg(row['坡向_rad']):.2f} "
+              f"| {np.rad2deg(row['主测线方向_rad']):.2f} "
+              f"| {row['u_min']:.2f} "
+              f"| {row['u_max']:.2f} "
+              f"| {row['v_min']:.2f} "
+              f"| {row['v_max']:.2f} |") 

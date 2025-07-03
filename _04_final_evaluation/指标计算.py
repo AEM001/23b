@@ -336,46 +336,20 @@ def main():
     
     # 2. 计算最终指标
     print("\n2. 计算最终指标...")
-    coverage_metrics = calculate_coverage_metrics(lines_df, interpolator)
+    metrics = calculate_coverage_metrics(lines_df, interpolator)
     
     # 3. 计算测线总长度（使用智能优化后的长度）
     total_length_nm = lines_df['length_optimized_nm'].sum()
     total_length_km = total_length_nm * 1.852
     
     # 4. 输出最终结果
-    print("\n" + "="*60)
-    print("第四问最终答案（保守边界延伸策略）")
-    print("="*60)
-    print(f"(1) 测线的总长度: {total_length_nm:.2f} 海里 ({total_length_km:.2f} 公里)")
-    print(f"(2) 漏测海区占总待测海域面积的百分比: {coverage_metrics['miss_rate']*100:.4f}%")
-    print(f"(3) 重叠率超过20%部分的总长度: {coverage_metrics['excess_overlap_length_nm']:.2f} 海里")
-    print("="*60)
-    print("说明: 采用保守边界延伸策略 + 高精度覆盖检测")
-    print("     基础延伸=完整覆盖宽度 + 角度修正 + 20%安全边距")
-    print("     最大化减少边界处的漏测问题")
-    print("="*60)
-    
-    # 5. 保存结果到文件
-    final_results = pd.DataFrame([{
-        '指标': '测线总长度(海里)',
-        '数值': f"{total_length_nm:.2f}"
-    }, {
-        '指标': '测线总长度(公里)', 
-        '数值': f"{total_length_km:.2f}"
-    }, {
-        '指标': '漏测率(%)',
-        '数值': f"{coverage_metrics['miss_rate']*100:.4f}"
-    }, {
-        '指标': '覆盖率(%)',
-        '数值': f"{coverage_metrics['coverage_rate']*100:.4f}"
-    }, {
-        '指标': '重叠率超过20%部分总长度(海里)',
-        '数值': f"{coverage_metrics['excess_overlap_length_nm']:.2f}"
-    }])
-    
-    final_results.to_csv('第四问最终答案.csv', index=False)
-    print(f"\n结果已保存至: 第四问最终答案.csv")
-    print("保守边界延伸策略计算完成！")
+    print("\n--- 最终评估指标 ---")
+    print(f"- 测线总长度: {total_length_nm:.2f} 海里 ({total_length_km:.2f} 公里)")
+    print(f"- 覆盖率: {metrics['coverage_rate']:.2%}")
+    print(f"- 漏测率: {metrics['miss_rate']:.2%}")
+    print(f"- 重叠率超过20%部分的总长度: {metrics['excess_overlap_length_nm']:.2f} 海里\n")
+
+    print("所有评估步骤完成。")
 
 if __name__ == '__main__':
     main() 

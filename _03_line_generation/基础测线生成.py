@@ -6,30 +6,30 @@ import matplotlib.patches as patches
 import matplotlib as mpl
 from matplotlib.lines import Line2D
 
-# Set font to a locally available one that supports Chinese characters
+# 设置字体为支持中文字符的本地可用字体
 mpl.rcParams['font.sans-serif'] = ['Heiti TC']
 mpl.rcParams['axes.unicode_minus'] = False
 
 
-# --- Constants ---
+# --- 常量定义 ---
 NM_TO_M = 1852
 THETA_DEG = 120
-ETA_TARGET = 0.10  # Target overlap 10%
+ETA_TARGET = 0.10  # 目标重叠率 10%
 
 def get_region_slope(beta1, beta2):
-    """Calculates the region's slope angle from plane coefficients."""
+    """根据平面系数计算区域的坡度角。"""
     tan_alpha = np.sqrt((beta1 / NM_TO_M)**2 + (beta2 / NM_TO_M)**2)
     alpha_rad = np.arctan(tan_alpha)
     return alpha_rad
 
 def uv_to_xy(u, v, theta_rad):
-    """Transforms a point from local (u,v) to global (x,y) coordinates."""
+    """将点从局部坐标系(u,v)转换到全局坐标系(x,y)。"""
     x = u * np.cos(theta_rad) - v * np.sin(theta_rad)
     y = u * np.sin(theta_rad) + v * np.cos(theta_rad)
     return x, y
 
 def get_avg_depth_on_line(v_coord, u_min, u_max, theta_rad, interpolator, num_samples=20):
-    """Calculates the average depth along a survey line in local coordinates."""
+    """计算局部坐标系中某条测线上的平均深度。"""
     u_samples = np.linspace(u_min, u_max, num_samples)
     v_samples = np.full_like(u_samples, v_coord)
     
@@ -45,7 +45,7 @@ def get_avg_depth_on_line(v_coord, u_min, u_max, theta_rad, interpolator, num_sa
     return np.mean(valid_depths)
 
 def calculate_line_distance(D_k, alpha_rad, theta_rad, eta):
-    """Calculates the distance to the next survey line based on depth and slope."""
+    """根据深度和坡度计算到下一条测线的距离。"""
     W_k_left = D_k * np.sin(theta_rad / 2) / np.cos(theta_rad / 2 + alpha_rad)
     W_k_right = D_k * np.sin(theta_rad / 2) / np.cos(theta_rad / 2 - alpha_rad)
     
@@ -57,7 +57,7 @@ def calculate_line_distance(D_k, alpha_rad, theta_rad, eta):
     return d_k_nm
 
 def plan_lines_for_region(region_params, plane_params, interpolator):
-    """Plans all survey lines for a single sub-region."""
+    """为单个子区域规划所有测线。"""
     region_id = region_params['区域编号']
     u_min, u_max = region_params['u_min'], region_params['u_max']
     v_min, v_max = region_params['v_min'], region_params['v_max']
@@ -83,7 +83,7 @@ def plan_lines_for_region(region_params, plane_params, interpolator):
     current_v = v_1
     
     # 迭代生成后续测线
-    for iteration in range(200):  # Safety break
+    for iteration in range(200):  # 安全限制
         D_k = get_avg_depth_on_line(current_v, u_min, u_max, theta_rad, interpolator)
         
         # 计算当前测线的右覆盖范围
@@ -138,9 +138,9 @@ def plan_lines_for_region(region_params, plane_params, interpolator):
     return lines_data
 
 def cohen_sutherland_clip(x1, y1, x2, y2, xmin, ymax, xmax, ymin):
-    """Clips a line segment using the Cohen-Sutherland algorithm."""
-    # Note: ymin/ymax are swapped because typical graphics contexts have y increasing downwards,
-    # but our geographic coords have y increasing upwards. The algorithm itself is agnostic.
+    """使用Cohen-Sutherland算法裁剪线段。"""
+    # 注意：ymin/ymax交换是因为典型的图形上下文中y向下递增，
+    # 但我们的地理坐标y向上递增。算法本身与坐标系无关。
     INSIDE, LEFT, RIGHT, BOTTOM, TOP = 0, 1, 2, 4, 8
 
     def _get_code(x, y):
@@ -156,10 +156,10 @@ def cohen_sutherland_clip(x1, y1, x2, y2, xmin, ymax, xmax, ymin):
     accept = False
 
     while True:
-        if code1 == 0 and code2 == 0: # Both endpoints inside
+        if code1 == 0 and code2 == 0: # 两个端点都在内部
             accept = True
             break
-        elif (code1 & code2) != 0: # Both endpoints outside and in the same region
+        elif (code1 & code2) != 0: # 两个端点都在外部且在同一区域
             break
         else:
             x, y = 0, 0
@@ -191,7 +191,7 @@ def cohen_sutherland_clip(x1, y1, x2, y2, xmin, ymax, xmax, ymin):
         return None
 
 def visualize_plan(lines_df, region_boundaries, grid_data, output_path="survey_plan_q4.png"):
-    """Creates a plot of the survey plan."""
+    """创建测线规划的可视化图表。"""
     fig, ax = plt.subplots(figsize=(10, 12.5))
     
     ax.scatter(grid_data['横坐标'], grid_data['纵坐标'], c=grid_data['深度'], cmap='ocean_r', s=1, alpha=0.6, label='原始海深数据点')
@@ -213,9 +213,9 @@ def visualize_plan(lines_df, region_boundaries, grid_data, output_path="survey_p
     ax.set_title('第四问：各子区域测线规划结果')
     ax.set_aspect('equal', adjustable='box')
     ax.grid(True, linestyle=':', alpha=0.5)
-    # Custom legend
+    # 自定义图例
     handles, labels = ax.get_legend_handles_labels()
-    unique_labels = dict(zip(labels, handles)) # Remove duplicate labels
+    unique_labels = dict(zip(labels, handles)) # 移除重复标签
     red_line = Line2D([0], [0], color='r', lw=2, label='规划测线')
     unique_labels['规划测线'] = red_line
     ax.legend(unique_labels.values(), unique_labels.keys(), loc='upper right', bbox_to_anchor=(1.35, 1.0))
@@ -225,16 +225,16 @@ def visualize_plan(lines_df, region_boundaries, grid_data, output_path="survey_p
     print(f"可视化图像已保存至 {output_path}")
 
 def main():
-    """Main function to run the survey line planning pipeline."""
-    # 1. Load data
+    """运行测线规划流水线的主函数。"""
+    # 1. 加载数据
     print("正在加载数据...")
     try:
-        # Try new organized structure first, then fall back to current structure
+        # 首先尝试新的组织结构，然后回退到当前结构
         try:
             params_df = pd.read_csv('../_02_coord_transform/local_coord_params.csv')
             grid_df = pd.read_csv('../_00_source_data/output.csv')
         except FileNotFoundError:
-            # Fallback to current structure
+            # 回退到当前结构
             try:
                 params_df = pd.read_csv('local_coord_params.csv')
             except FileNotFoundError:
@@ -244,7 +244,7 @@ def main():
         print(f"错误: 必需的数据文件未找到 - {e}。请确保相关数据文件存在。")
         return
 
-    # Hardcoded plane fitting and boundary parameters from previous steps
+    # 从之前步骤硬编码的平面拟合和边界参数
     plane_params_data = {
         '区域编号': [0, 1, 2, 3, 4, 5, 6],
         'β₁': [-0.21, 20.45, 2.35, 41.52, 62.59, 9.55, 14.40],
@@ -261,18 +261,18 @@ def main():
     }
     region_boundaries_df = pd.DataFrame(region_boundaries_data)
 
-    # 2. Prepare interpolator
+    # 2. 准备插值器
     print("正在创建深度插值器...")
     interpolator = LinearNDInterpolator(points=grid_df[['横坐标', '纵坐标']].values, values=grid_df['深度'].values)
 
-    # 3. Plan lines for all regions
+    # 3. 为所有区域规划测线
     print("正在为所有区域规划测线...")
     all_lines = []
     for _, region_row in params_df.iterrows():
         region_id = int(region_row['区域编号'])
         print(f"  - 处理区域 {region_id}...")
         
-        # Generate lines for this region (without clipping)
+        # 为此区域生成测线（不进行裁剪）
         region_lines = plan_lines_for_region(region_row, plane_params_df, interpolator)
         all_lines.extend(region_lines)
 
@@ -280,23 +280,14 @@ def main():
     lines_df.to_csv("survey_lines_q4.csv", index=False, float_format='%.4f')
     print("\n所有测线数据已保存至 survey_lines_q4.csv")
 
-    # 4. Generate report
-    print("正在生成报告...")
-    report_content = "# 第四问测线规划报告\n\n"
-    report_content += "本文档详细说明了针对第四问中7个子区域进行测线规划的方法、过程和结果。\n\n"
-    report_content += "## 方法论\n\n"
-    report_content += "我们严格遵循了 `4solution.md` 中提出的高级迭代算法。该方法的核心思想是将第三问中针对单一坡向的迭代算法推广到复杂地形。主要步骤如下：\n\n"
-    report_content += "1.  **局部坐标系作业**：对每个子区域，我们在其主测线方向 `u` 和坡向 `v` 构成的局部坐标系下进行规划。\n"
-    report_content += "2.  **动态水深计算**：测线间距严重依赖于当前水深。我们通过对 `output.csv` 中的原始格网数据建立一个`LinearNDInterpolator` (线性插值器)，实现了在迭代过程中动态、精确地计算任意一条测线上的平均水深。\n"
-    report_content += "3.  **迭代布线**：从每个区域的坡向起始边界 `v_min` 开始，我们使用第三问的迭代公式计算到下一条测线的距离 `d_k`。该公式的输入是上一步动态计算的平均水深 `D_k`、区域的平均坡度 `α_k` 以及10%的目标重叠率。持续迭代，直到测线覆盖范围超过 `v_max`。\n\n"
-    report_content += "## 结果汇总\n\n"
+    # 4. 生成报告
+    print("\n--- 测线规划结果摘要 ---")
 
     summary_data = []
     total_length = 0
     for region_id in lines_df['region_id'].unique():
         region_lines_df = lines_df[lines_df['region_id'] == region_id]
         num_lines = len(region_lines_df)
-        # Length is pre-calculated per line
         length_nm = region_lines_df['length_nm'].sum()
         total_length += length_nm
         summary_data.append({
@@ -307,20 +298,18 @@ def main():
         })
     summary_df = pd.DataFrame(summary_data)
     
-    table_md = summary_df.to_markdown(index=False, floatfmt='.2f')
-    if table_md:
-        report_content += table_md
+    print("\n| 区域编号 | 测线数量 | 总长度 (海里) | 总长度 (公里) |")
+    print("|:---:|:---:|:---:|:---:|")
+    for index, row in summary_df.iterrows():
+        print(f"| {int(row['区域编号'])} "
+              f"| {int(row['测线数量'])} "
+              f"| {row['总长度 (海里)']:.2f} "
+              f"| {row['总长度 (公里)']:.2f} |")
 
-    report_content += f"\n\n**所有区域测线总长度为: {total_length:.2f} 海里 ({total_length * 1.852:.2f} 公里)。**\n\n"
-    report_content += "测线规划的可视化结果如下图所示，详细数据已存入 `survey_lines_q4.csv`。\n\n"
-    report_content += "![测线规划结果](survey_plan_q4.png)\n"
+    print(f"\n所有区域测线总长度为: {total_length:.2f} 海里 ({total_length * 1.852:.2f} 公里)。")
 
-    with open("survey_plan_report_q4.md", "w", encoding='utf-8') as f:
-        f.write(report_content)
-    print("报告已生成: survey_plan_report_q4.md")
-
-    # 5. Visualize results
-    print("正在生成可视化图像...")
+    # 5. 可视化结果
+    print("\n正在生成可视化图像...")
     visualize_plan(lines_df, region_boundaries_df, grid_df)
 
 if __name__ == '__main__':

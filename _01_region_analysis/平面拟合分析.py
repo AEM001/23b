@@ -77,59 +77,21 @@ def fit_plane_to_regions(data_path='output.csv'):
 
 def append_to_markdown_report(results_df, report_file='region_division_report.md'):
     """将平面拟合的结果和拟合优度追加到Markdown报告中。"""
-    print(f"正在更新报告文件: '{report_file}'")
+    print(f"\n--- 步骤 4: 平面拟合结果摘要 ---")
     
-    # 查找并移除旧的"第三步"章节，以便重新生成
-    try:
-        with open(report_file, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        start_line = -1
-        for i, line in enumerate(lines):
-            if line.strip() == "## 第三步：各区域平面拟合与地形参数计算":
-                start_line = i
-                break
-        
-        if start_line != -1:
-            lines = lines[:start_line]
-            with open(report_file, 'w', encoding='utf-8') as f:
-                f.writelines(lines)
-            print("已移除旧的第三步报告内容，准备重新生成。")
-    except FileNotFoundError:
-        pass # 如果文件不存在，则不执行任何操作
-
-    new_section = """
-## 第三步：各区域平面拟合、参数计算与优度检验
-
-对第二步划分出的每个矩形区域，我们提取其内部的原始数据点，并拟合一个最佳近似平面 `z = β₀ + β₁x + β₂y`。根据拟合结果，我们计算出每个区域的平均坡度和坡向，并通过 **R²分数** 和 **均方根误差 (RMSE)** 来评估拟合的准确性。
-
-- **R² 分数**: 范围0-1，越接近1，表示平面模型对地形的解释能力越强。
-- **RMSE (m)**: 模型的预测误差，单位为米，值越小表示拟合偏差越小。
-
-### 计算结果摘要
-
-| 区域编号 | 数据点数 | β₀ | β₁ | β₂ | 坡度(α)/° | 坡向(φ)/° | R² 分数 | RMSE (m) |
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-"""
+    print("各区域平面拟合、参数计算与优度检验结果:\n")
+    print("| 区域编号 | 数据点数 | β₀ | β₁ | β₂ | 坡度(α)/° | 坡向(φ)/° | R² 分数 | RMSE (m) |")
+    print("|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|")
     for index, row in results_df.iterrows():
-        new_section += (
-            f"| {int(row['区域编号'])} "
-            f"| {int(row['数据点数量'])} "
-            f"| {row['beta_0 (截距)']:.2f} "
-            f"| {row['beta_1 (x系数)']:.2f} "
-            f"| {row['beta_2 (y系数)']:.2f} "
-            f"| {row['坡度 (度)']:.2f} "
-            f"| {row['坡向 (度)']:.2f} "
-            f"| {row['R2_Score']:.3f} "
-            f"| {row['RMSE_m']:.3f} |\n"
-        )
-        
-    try:
-        with open(report_file, 'a', encoding='utf-8') as f:
-            f.write(new_section)
-        print("报告更新成功。")
-    except FileNotFoundError:
-        print(f"错误: 报告文件 '{report_file}' 未找到。")
+        print(f"| {int(row['区域编号'])} "
+              f"| {int(row['数据点数量'])} "
+              f"| {row['beta_0 (截距)']:.2f} "
+              f"| {row['beta_1 (x系数)']:.2f} "
+              f"| {row['beta_2 (y系数)']:.2f} "
+              f"| {row['坡度 (度)']:.2f} "
+              f"| {row['坡向 (度)']:.2f} "
+              f"| {row['R2_Score']:.3f} "
+              f"| {row['RMSE_m']:.3f} |")
 
 if __name__ == '__main__':
     results_dataframe = fit_plane_to_regions()

@@ -7,35 +7,15 @@ import matplotlib.patches as patches
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
-# --- 中文字体设置 ---
 def setup_chinese_font():
-    """设置中文字体以正确显示中文字符。"""
-    import matplotlib.font_manager as fm
-    
-    # 常见的中文字体列表，按优先级排序
-    chinese_fonts = [
-        'PingFang SC',      # macOS 苹方字体
-        'Microsoft YaHei',  # Windows 微软雅黑        
-    ]
-    
-    # 获取系统可用字体列表
-    available_fonts = [f.name for f in fm.fontManager.ttflist]
-    
-    # 查找第一个可用的中文字体
-    selected_font = None
-    for font in chinese_fonts:
-        if font in available_fonts:
-            selected_font = font
-            print(f"使用字体: {font}")
+    """简洁设置matplotlib中文字体。"""
+    import matplotlib
+    fonts = ['PingFang SC', 'Microsoft YaHei']
+    for font in fonts:
+        if font in [f.name for f in matplotlib.font_manager.fontManager.ttflist]:
+            plt.rcParams['font.sans-serif'] = [font]
             break
-    
-    if selected_font is None:
-        print("警告: 未找到合适的中文字体，将使用系统默认字体")
-        selected_font = 'DejaVu Sans'
-    
-    # 设置matplotlib参数
-    plt.rcParams['font.sans-serif'] = [selected_font]
-    plt.rcParams['axes.unicode_minus'] = False  # 正常显示负号
+    plt.rcParams['axes.unicode_minus'] = False
 
 # --- 分析模块 1: K-Means 聚类分析 ---
 def analyze_and_plot_clustering(grid_x, grid_y, grid_z, slope, aspect, points, depths, n_clusters):
@@ -160,44 +140,12 @@ def generate_markdown_report(rectangles, cluster_params, split_params, report_fi
     """生成包含分析参数和结果的Markdown报告。"""
     print(f"\n--- 步骤 3: 生成分析报告 ---")
     
-    report_content = f"""
-# 海域矩形区域划分分析报告
-
-本文档总结了通过两步法对海域数据进行区域划分的过程和结果。
-
-## 第一步：基于K-Means聚类的初步分析
-
-此步骤旨在通过聚类算法直观地识别地形特征相似的区域。
-
-- **聚类数量 (n_clusters):** `{cluster_params['n_clusters']}`
-
-聚类结果（如下图 `clustering_analysis.png` 所示）揭示了地形的内在结构，但其生成的边界框存在重叠，不适用于直接的测线规划。
-
-![聚类分析图](clustering_analysis.png)
-
-## 第二步：基于递归分割的最终方案
-
-为得到无重叠、全覆盖的矩形区域，我们采用递归分割算法对整个海域进行划分。
-
-### 使用的参数
-- **最大递归深度 (max_depth):** `{split_params['max_depth']}`
-- **坡向方差阈值 (aspect_variance_threshold):** `{split_params['aspect_variance_threshold']}`
-- **区域最小网格数 (min_cells):** `{split_params['min_cells']}`
-
-### 最终矩形区域坐标
-
-总共划分出 **{len(rectangles)}** 个独立的矩形区域。详细坐标如下：
-
-| 区域编号 | X 范围 (min, max) | Y 范围 (min, max) |
-|:---:|:---:|:---:|
-"""
-    for i, (x_min, x_max, y_min, y_max) in enumerate(rectangles):
-         if x_min >= x_max or y_min >= y_max: continue
-         report_content += f"| {i} | ({x_min:.2f}, {x_max:.2f}) | ({y_min:.2f}, {y_max:.2f}) |\n"
-
-    with open(report_file, 'w', encoding='utf-8') as f:
-        f.write(report_content)
-    print(f"分析报告已成功生成: '{report_file}'")
+    print(f"关键参数总结:")
+    print(f"- 聚类数量 (n_clusters): {cluster_params['n_clusters']}")
+    print(f"- 最大递归深度 (max_depth): {split_params['max_depth']}")
+    print(f"- 坡向方差阈值 (aspect_variance_threshold): {split_params['aspect_variance_threshold']}")
+    print(f"- 区域最小网格数 (min_cells): {split_params['min_cells']}")
+    print(f"- 最终划分区域总数: {len(rectangles)} 个")
 
 
 # --- 主执行函数 ---

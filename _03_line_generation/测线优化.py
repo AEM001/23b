@@ -230,8 +230,8 @@ def visualize_survey_plan(lines_df, region_boundaries, grid_data,
     print(f"测线方案可视化图像已保存至 {output_path}")
 
 def main():
-    """Main function to run the optimized survey line planning pipeline."""
-    # 1. Load data
+    """主函数：运行优化的测线规划流程。"""
+    # 1. 加载数据
     print("正在加载数据...")
     try:
         lines_df_original = pd.read_csv("survey_lines_q4.csv")
@@ -241,7 +241,7 @@ def main():
         print(f"错误: 必需的数据文件未找到 - {e}")
         return
 
-    # Region boundaries
+    # 区域边界数据
     region_boundaries_data = {
         '区域编号': [0, 1, 2, 3, 4, 5, 6],
         'X_min': [0.00, 0.98, 0.00, 1.99, 2.99, 1.99, 2.99],
@@ -251,67 +251,45 @@ def main():
     }
     region_boundaries_df = pd.DataFrame(region_boundaries_data)
 
-    # 2. Optimize survey lines
+    # 2. 优化测线长度
     print("正在进行智能测线长度优化...")
     lines_df_optimized = optimize_survey_lines(lines_df_original, region_boundaries_df, depth_interpolator)
     lines_df_optimized.to_csv("survey_lines_q4_optimized.csv", index=False, float_format='%.4f')
     print("优化的测线数据已保存至 survey_lines_q4_optimized.csv")
 
-    # 3. Generate optimization report
-    print("正在生成优化报告...")
+    # 3. 生成优化报告 (精简输出)
     total_length = lines_df_optimized['length_optimized_nm'].sum()
 
-    report_content = "# 智能测线边界优化方案报告（保守延伸版本）\n\n"
-    report_content += "## 优化策略说明\n\n"
-    report_content += "采用高度保守的智能边界延伸算法，根据测线覆盖宽度和入射角度动态调整测线长度。"
-    report_content += "测线在区域边界处会大幅延伸，确保其覆盖宽度能够完全覆盖边界内的区域，"
-    report_content += "最大程度减少边界处的漏测问题。\n\n"
-    report_content += "**核心技术升级**：\n"
-    report_content += "- 基础延伸距离 = 完整覆盖宽度（而非半宽）\n"
-    report_content += "- 角度修正：测线与边界夹角越小，延伸越多\n" 
-    report_content += "- 安全边距：额外增加20%覆盖宽度作为安全缓冲\n"
-    report_content += "- 综合延伸策略确保在各种角度下的完全覆盖\n\n"
-    
+    print("\n--- 智能测线边界优化方案摘要 ---")
     summary_data = []
     for region_id in lines_df_optimized['region_id'].unique():
         region_lines = lines_df_optimized[lines_df_optimized['region_id'] == region_id]
-        
+
         length_total = region_lines['length_optimized_nm'].sum()
-        
-        summary_data.append({
-            '区域编号': region_id,
-            '测线数量': len(region_lines),
-            '总长度(海里)': length_total,
-            '总长度(公里)': length_total * 1.852
-        })
-    
+
+        summary_data.append({'区域编号': region_id,'测线数量': len(region_lines),'总长度(海里)': length_total,'总长度(公里)': length_total * 1.852})
+
     summary_df = pd.DataFrame(summary_data)
-    table_md = summary_df.to_markdown(index=False, floatfmt='.2f')
-    if table_md:
-        report_content += table_md
 
-    report_content += f"\n\n**整体统计**:\n"
-    report_content += f"- 总测线数量: {len(lines_df_optimized)} 条\n"
-    report_content += f"- 总测线长度: {total_length:.2f} 海里 ({total_length * 1.852:.2f} 公里)\n\n"
-    
-    report_content += "**技术优势**: \n"
-    report_content += "1. 根据实际水深动态调整延伸距离\n"
-    report_content += "2. 有效解决边界角度导致的漏测问题\n"
-    report_content += "3. 保持测线平行性和覆盖效果\n"
-    report_content += "4. 优化实际作业效率和覆盖质量\n\n"
-    
-    with open("survey_optimization_report.md", "w", encoding='utf-8') as f:
-        f.write(report_content)
-    print("优化报告已生成: survey_optimization_report.md")
+    print("\n| 区域编号 | 测线数量 | 总长度(海里) | 总长度(公里) |")
+    print("|:---:|:---:|:---:|:---:|")
+    for index, row in summary_df.iterrows():
+        print(f"| {int(row['区域编号'])} "
+              f"| {int(row['测线数量'])} "
+              f"| {row['总长度(海里)']:.2f} "
+              f"| {row['总长度(公里)']:.2f} |")
 
-    # 4. Create visualization
-    print("正在生成可视化...")
+    print(f"\n整体统计:")
+    print(f"- 总测线数量: {len(lines_df_optimized)} 条")
+    print(f"- 总测线长度: {total_length:.2f} 海里 ({total_length * 1.852:.2f} 公里)")
+
+    # 4. 创建可视化
+    print("\n正在生成可视化...")
     visualize_survey_plan(lines_df_optimized, region_boundaries_df, grid_df)
-    
-    print(f"\n=== 保守延伸策略优化方案总结 ===")
+
+    print(f"\n=== 优化方案总结 ===")
     print(f"总测线数量: {len(lines_df_optimized)} 条")
     print(f"总测线长度: {total_length:.2f} 海里 ({total_length * 1.852:.2f} 公里)")
-    print(f"采用保守边界延伸策略，最大化减少漏测")
 
 if __name__ == '__main__':
     main() 
