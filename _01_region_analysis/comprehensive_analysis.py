@@ -15,13 +15,7 @@ def setup_chinese_font():
     # 常见的中文字体列表，按优先级排序
     chinese_fonts = [
         'PingFang SC',      # macOS 苹方字体
-        'Hiragino Sans GB', # macOS 冬青黑体
-        'STHeiti',          # macOS 华文黑体
-        'Arial Unicode MS', # macOS 通用字体
-        'SimHei',           # Windows 黑体
-        'Microsoft YaHei',  # Windows 微软雅黑
-        'WenQuanYi Micro Hei', # Linux 文泉驿微米黑
-        'DejaVu Sans'       # 备用字体
+        'Microsoft YaHei',  # Windows 微软雅黑        
     ]
     
     # 获取系统可用字体列表
